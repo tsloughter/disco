@@ -1,5 +1,7 @@
-import httplib, os, random, struct, time, socket, base64
+import httplib, os, random, struct, time, socket, base64, string
 from cStringIO import StringIO
+from boto.s3.connection import S3Connection
+from boto.s3.key import Key
 
 from disco.error import CommError
 from disco.settings import DiscoSettings
@@ -90,13 +92,33 @@ def download(url, method='GET', data=None, offset=(), token=None):
                    headers=headers).read()
 
 def upload(urls, source, token=None, **kwargs):
+    def _upload(url):
+        if string.find(url, "s3://") == 0:
+            key = os.path.basename(url)
+            s3_put(key, source)
+            return ("\"%s\"" % url)
+        else:
+            return request('PUT',
+                           url,
+                           data=source.read(),
+                           headers=auth_header(token)).read()
+
     source = FileSource(source)
-    if nocurl:
-        return [request('PUT',
-                        url,
-                        data=source.read(),
-                        headers=auth_header(token)).read() for url in urls]
-    return list(comm_pycurl.upload(urls, source, token, **kwargs))
+    #if nocurl:
+    results = [_upload(url) for url in urls]
+    print results
+    return results
+    #return list(comm_pycurl.upload(urls, source, token, **kwargs))
+
+def s3_put(key, source):
+    conn = S3Connection()
+    bucket = conn.create_bucket("disco_s3_test")
+    k = Key(bucket)
+
+    source = FileSource(source)
+
+    k.key = key
+    k.set_contents_from_string(source.read())
 
 def open_url(url, *args, **kwargs):
     from disco.util import schemesplit
